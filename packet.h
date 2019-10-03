@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 #define MAX_QUANTITY_ADC3_PB   5
 #define MAX_QUANTITY_DIN3_PB   4
 #define MAX_QUANTITY_RSM_BOX   2
@@ -22,21 +24,21 @@ typedef struct RESULT
 
 typedef struct
 {
-    unsigned long s_addr;   /* адрес получателя (кому отправляется пакет. что-) */
+    uint32_t s_addr;   /* адрес получателя (кому отправляется пакет. что-) */ // in_addr_t = 4 bytes
     char SysCode[4]; /* описание источника пакета */
     char Version[4]; /* версия пакета */
-    int PktSize;     /* общий размер пакета */
-    int DataOffset;  /* смещение в пакете до данных MeasurementFrame */
-    int DataSize;    /* размер полезных данных  */
-    long count;      /* порядковый номер пакета */
+    int32_t PktSize;     /* общий размер пакета */
+    int32_t DataOffset;  /* смещение в пакете до данных MeasurementFrame */
+    int32_t DataSize;    /* размер полезных данных  */
+    int32_t count;      /* порядковый номер пакета */
     int Time;
     int Date;
     int Tick;
     int RelativeTime; /* некоторе относительное время в тиках */
     /* char  Spare[4]; */
-    short marker; /* abcd */
-    short Crc;    /* контрольная сумма данных от начала структуры до поля Crc */
+    uint16_t marker; /* abcd */
+    uint16_t Crc;    /* контрольная сумма данных от начала структуры до поля Crc */
     char MeasurementFrame[sizeof(measure_result)];
     short MeasurementCrc; /* контрольная сумма MeasurementFrame */
     /* разделение контрольных сумм специально сделано разделено. т.к. MeasurementFrame не меняется для всех получателей */
-} TSurMeasurementPkt;
+} __attribute__((packed)) TSurMeasurementPkt ;
