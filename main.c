@@ -9,6 +9,7 @@
 #include <arpa/inet.h>
 #include <time.h>
 #include "config.h"
+#include "TabCRC.h"
 
 int create_server()
 {
@@ -48,7 +49,7 @@ int create_server()
 	return fd;
 }
 
-int serve(int fd, FILE* f)
+int serve(int fd, FILE *f)
 {
 	struct sockaddr_in addr;
 	char *in_buf;
@@ -77,7 +78,8 @@ int serve(int fd, FILE* f)
 
 		n = fread(&pkg, sizeof(packet_t), 1, f);
 		reltime = htonl(pkg.RelativeTime);
-		while (!feof(f)) {
+		while (!feof(f))
+		{
 			n = sendto(fd, &pkg, sizeof(packet_t), 0, (struct sockaddr *)&addr, addrlen);
 			if (n < 0)
 			{
@@ -98,44 +100,70 @@ int serve(int fd, FILE* f)
 	}
 }
 
-int sanity_check(FILE* f) {
-	packet_t pkg, pk2;
+int sanity_check(packet_t *pkg)
+{
+	if (htonl(pkg->PktSize) != sizeof(packet_t))
+	{
+		return 1;
+	}
+	if (memcmp(pkg->SysCode, "sur\0", 4) != 0)
+	{
+		return 2;
+	}
+	if (memcmp(pkg->Version, "mf01", 4) != 0)
+	{
+		return 3;
+	}
+	if (htons((uint16_t)pkg->Tick) != 1000)
+	{
+		return 4;
+	}
+	if (pkg->marker != 0xCDAB)
+	{
+		return 5;
+	}
+	if (htons(pkg->Crc) != CalculateCRC((char *)pkg, sizeof(32)))
+	{
+		return 6;
+	}
+	if (htons(pkg->MeasurementCrc) != CalculateCRC((char *)&pkg->MeasurementFrame, sizeof(measure_result)))
+	{
+		return 7;
+	}
+	return 0;
+}
+
+int full_check(FILE *f)
+{
+	packet_t pkg;
 	int data_len;
+	int errs[8];
+	int count = 0;
 	// int reltime;
 	// int count = 0;
 	rewind(f); // fseek(f, 0, SEEK_SET);
-	data_len = fread(&pkg, sizeof(packet_t), 1, f);
-	if (htonl(pkg.PktSize) != sizeof(packet_t)) {
-		fprintf(stderr, "Packet size: %d in file != %d per definition\n", htonl(pkg.PktSize), sizeof(packet_t));
-		return 1;
+	memset(errs, 0, sizeof(errs));
+	while (!feof(f))
+	{
+		data_len = fread(&pkg, sizeof(packet_t), 1, f);
+		errs[sanity_check(&pkg)]++;
+		count++;
 	}
-	// printf("%d\n", htonl(pkg.count));
-	if (memcmp(pkg.SysCode, "sur\0", 4) != 0) {
-		fprintf(stderr, "Wrong SysCode\n");
-		return 1;
-	}
-	if (memcmp(pkg.Version, "mf01", 4) != 0) {
-		fprintf(stderr, "Wrong version\n");
-		return 1;
-	}
-	if (htons((uint16_t)pkg.Tick) != 1000) {
-		fprintf(stderr, "Tick != 1 ms\n");
-		return 1;
-	}
-	if (pkg.marker != 0xCDAB) {
-		fprintf(stderr, "Marker: %0X != CDAB\n", pkg.marker);
-		return 1;
-	}
-	// reltime = htonl(pkg.RelativeTime);
-	// while (!feof(f)) {
-	// 	count++;
-	// 	data_len = fread(&pkg, sizeof(packet_t), 1, f);
-	// 	if (htonl(pkg.RelativeTime) - reltime != 10) {
-	// 		printf("D[RelTime] = %d\n", htonl(pkg.RelativeTime) - reltime);
-	// 	}
-	// 	reltime = htonl(pkg.RelativeTime);
-	// }
-	// printf("Total %d\n", count);
+	if (errs[1])
+		printf("%d packets with wrong PktSize\n", errs[1]);
+	if (errs[2])
+		printf("%d packets with Wrong SysCode\n", errs[2]);
+	if (errs[3])
+		printf("%d packets with wrong version\n", errs[3]);
+	if (errs[4])
+		printf("%d packets with tick != 1 ms\n", errs[4]);
+	if (errs[5])
+		printf("%d packets with marker != 0xABCD\n", errs[5]);
+	if (errs[6])
+		printf("%d packets with wrong CRC\n", errs[6]);
+	if (errs[7])
+		printf("%d packets with wrong measurement frame CRC\n", errs[7]);
+	printf("%d of %d packets are correct\n", errs[0], count);
 	rewind(f);
 	return 0;
 }
@@ -144,7 +172,7 @@ int main(int argc, char **argv)
 {
 	FILE *f;
 	int fd, ret;
-	char* fn;
+	char *fn;
 
 	if (argc != 2)
 	{
@@ -155,7 +183,8 @@ int main(int argc, char **argv)
 	f = fopen(fn, "rb");
 	// printf("%d\n", sizeof(long));
 
-	if ((ret = sanity_check(f)) != 0) {
+	if ((ret = full_check(f)) != 0)
+	{
 		fprintf(stderr, "Sanity check failed\n");
 		return ret;
 	}
